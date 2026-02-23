@@ -15,4 +15,12 @@ impl Actor {
             speed,
         }
     }
+
+    pub fn new_world(pos: (f32, f32), speed: f32) -> Self {
+        Self {
+            pos,
+            radius: 12.0,
+            speed,
+        }
+    }
 }

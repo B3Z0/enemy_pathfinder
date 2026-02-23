@@ -1,4 +1,4 @@
-use crate::map::{TILE, grid_to_world, is_wall};
+use crate::map::{RuntimeMapAdapter, grid_to_world, is_wall, map_tile_size};
 
 pub fn los_grid(a: (usize, usize), b: (usize, usize)) -> bool {
     let aw = grid_to_world(a.0, a.1);
@@ -6,11 +6,33 @@ pub fn los_grid(a: (usize, usize), b: (usize, usize)) -> bool {
     has_line_of_sight(aw, bw)
 }
 
+pub fn los_grid_with_map(map: &RuntimeMapAdapter, a: (usize, usize), b: (usize, usize)) -> bool {
+    let aw = map.grid_to_world(a.0, a.1);
+    let bw = map.grid_to_world(b.0, b.1);
+    has_line_of_sight_with(aw, bw, map.tile_size, |x, y| map.is_wall(x, y))
+}
+
+pub fn has_line_of_sight_with_map(map: &RuntimeMapAdapter, a: (f32, f32), b: (f32, f32)) -> bool {
+    has_line_of_sight_with(a, b, map.tile_size, |x, y| map.is_wall(x, y))
+}
+
 pub fn has_line_of_sight(a: (f32, f32), b: (f32, f32)) -> bool {
-    let x0 = a.0 / TILE;
-    let y0 = a.1 / TILE;
-    let x1 = b.0 / TILE;
-    let y1 = b.1 / TILE;
+    has_line_of_sight_with(a, b, map_tile_size(), |x, y| is_wall(x, y))
+}
+
+fn has_line_of_sight_with<FIsWall>(
+    a: (f32, f32),
+    b: (f32, f32),
+    tile: f32,
+    is_wall_fn: FIsWall,
+) -> bool
+where
+    FIsWall: Fn(usize, usize) -> bool,
+{
+    let x0 = a.0 / tile;
+    let y0 = a.1 / tile;
+    let x1 = b.0 / tile;
+    let y1 = b.1 / tile;
 
     let mut cx = x0 as usize;
     let mut cy = y0 as usize;
@@ -40,7 +62,7 @@ pub fn has_line_of_sight(a: (f32, f32), b: (f32, f32)) -> bool {
         frac_y * t_delta_y
     };
 
-    if is_wall(cx, cy) {
+    if is_wall_fn(cx, cy) {
         return false;
     }
 
@@ -61,7 +83,7 @@ pub fn has_line_of_sight(a: (f32, f32), b: (f32, f32)) -> bool {
             cy = ny as usize;
         }
 
-        if is_wall(cx, cy) {
+        if is_wall_fn(cx, cy) {
             return false;
         }
     }

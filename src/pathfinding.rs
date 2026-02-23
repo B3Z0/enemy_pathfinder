@@ -1,7 +1,7 @@
 use std::cmp::Ordering;
 use std::collections::BinaryHeap;
 
-use crate::map::{MAP_H, MAP_W, blocked_for_agent, is_wall};
+use crate::map::{RuntimeMapAdapter, blocked_for_agent, is_wall, map_height, map_width};
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 struct Node {
@@ -44,21 +44,64 @@ fn neighbors4(x: usize, y: usize) -> [(i32, i32); 4] {
 }
 
 pub fn astar(start: (usize, usize), goal: (usize, usize)) -> Vec<(usize, usize)> {
-    if is_wall(start.0, start.1) || is_wall(goal.0, goal.1) {
+    astar_impl(
+        start,
+        goal,
+        map_width(),
+        map_height(),
+        |x, y| is_wall(x, y),
+        |x, y| blocked_for_agent(x, y),
+    )
+}
+
+pub fn astar_with_map(
+    map: &RuntimeMapAdapter,
+    start: (usize, usize),
+    goal: (usize, usize),
+) -> Vec<(usize, usize)> {
+    astar_impl(
+        start,
+        goal,
+        map.width,
+        map.height,
+        |x, y| map.is_wall(x, y),
+        |x, y| map.blocked_for_agent(x, y),
+    )
+}
+
+fn astar_impl<FIsWall, FBlocked>(
+    start: (usize, usize),
+    goal: (usize, usize),
+    width: usize,
+    height: usize,
+    is_wall_fn: FIsWall,
+    blocked_fn: FBlocked,
+) -> Vec<(usize, usize)>
+where
+    FIsWall: Fn(usize, usize) -> bool,
+    FBlocked: Fn(usize, usize) -> bool,
+{
+    if is_wall_fn(start.0, start.1) || is_wall_fn(goal.0, goal.1) {
         return vec![];
     }
     if start == goal {
         return vec![start];
     }
+    if width == 0 || height == 0 {
+        return vec![];
+    }
+
+    let idx = |x: usize, y: usize| -> usize { y * width + x };
 
     let mut open = BinaryHeap::<Node>::new();
     let inf: i32 = i32::MAX / 4;
 
-    let mut g_score = [[inf; MAP_W]; MAP_H];
-    let mut came_from = [[None::<(usize, usize)>; MAP_W]; MAP_H];
-    let mut closed = [[false; MAP_W]; MAP_H];
+    let cell_count = width * height;
+    let mut g_score = vec![inf; cell_count];
+    let mut came_from = vec![None::<(usize, usize)>; cell_count];
+    let mut closed = vec![false; cell_count];
 
-    g_score[start.1][start.0] = 0;
+    g_score[idx(start.0, start.1)] = 0;
 
     open.push(Node {
         x: start.0,
@@ -70,17 +113,18 @@ pub fn astar(start: (usize, usize), goal: (usize, usize)) -> Vec<(usize, usize)>
     while let Some(current) = open.pop() {
         let cx = current.x;
         let cy = current.y;
+        let current_idx = idx(cx, cy);
 
-        if closed[cy][cx] {
+        if closed[current_idx] {
             continue;
         }
-        closed[cy][cx] = true;
+        closed[current_idx] = true;
 
         if (cx, cy) == goal {
             let mut path = vec![(cx, cy)];
             let mut cur = (cx, cy);
             while cur != start {
-                if let Some(prev) = came_from[cur.1][cur.0] {
+                if let Some(prev) = came_from[idx(cur.0, cur.1)] {
                     cur = prev;
                     path.push(cur);
                 } else {
@@ -91,7 +135,7 @@ pub fn astar(start: (usize, usize), goal: (usize, usize)) -> Vec<(usize, usize)>
             return path;
         }
 
-        let current_g = g_score[cy][cx];
+        let current_g = g_score[current_idx];
 
         for (nx, ny) in neighbors4(cx, cy) {
             if nx < 0 || ny < 0 {
@@ -99,21 +143,22 @@ pub fn astar(start: (usize, usize), goal: (usize, usize)) -> Vec<(usize, usize)>
             }
             let nx = nx as usize;
             let ny = ny as usize;
-            if nx >= MAP_W || ny >= MAP_H {
+            if nx >= width || ny >= height {
                 continue;
             }
+            let neighbor_idx = idx(nx, ny);
 
-            if blocked_for_agent(nx, ny) {
+            if blocked_fn(nx, ny) {
                 continue;
             }
-            if closed[ny][nx] {
+            if closed[neighbor_idx] {
                 continue;
             }
 
             let tentative_g = current_g + 1;
-            if tentative_g < g_score[ny][nx] {
-                came_from[ny][nx] = Some((cx, cy));
-                g_score[ny][nx] = tentative_g;
+            if tentative_g < g_score[neighbor_idx] {
+                came_from[neighbor_idx] = Some((cx, cy));
+                g_score[neighbor_idx] = tentative_g;
 
                 let h = manhattan((nx, ny), goal);
                 open.push(Node {
